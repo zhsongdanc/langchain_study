@@ -1,0 +1,125 @@
+# 字节码文件（Python编译生成）
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C扩展编译产物
+*.so
+
+# 分发/打包相关
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# 虚拟环境
+venv/
+env/
+ENV/
+env/
+.env
+.venv
+ENV.bak/
+venv.bak/
+
+# 测试和覆盖率报告
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# 环境变量配置文件
+.env
+.venv
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE/编辑器配置
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store  # macOS系统文件
+.project
+.pydevproject
+.settings/
+.atom/
+.fleet/
+
+# 日志文件
+logs/
+*.log
+log/
+
+# 数据库文件
+*.sqlite3
+*.db
+*.db-journal
+
+# 缓存文件
+*.pid
+*.seed
+*.pid.lock
+
+# pyenv 版本管理
+.python-version
+
+# pip 相关
+pip-log.txt
+pip-delete-this-directory.txt
+
+# celery 任务队列
+celerybeat-schedule
+celerybeat.pid
+
+# Django 框架特有（如果不用Django可删除）
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+static/
+. django_debug
+
+# Flask 框架特有（如果不用Flask可删除）
+instance/
+.webassets-cache
+
+# Scrapy 爬虫框架特有（如果不用Scrapy可删除）
+.scrapy
+
+# PEP 582 本地包缓存
+__pypackages__/
+
+# 其他临时文件
+*.tmp
+*.temp

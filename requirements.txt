@@ -1,0 +1,17 @@
+# 核心框架
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0
+
+# 模型接入（选你需要的，建议都加上）
+langchain-openai        # 兼容 OpenAI, 硅基流动, OpenRouter
+langchain-google-genai  # 接入免费的 Gemini
+langchain-ollama        # 接入本地模型 (强烈推荐)
+
+# 工具类
+python-dotenv           # 管理 API Key 环境变量
+pydantic>=2.0           # 数据校验（LangChain 底层依赖）
+
+# 进阶功能 (RAG/检索)
+faiss-cpu               # 简单的本地向量数据库
+tiktoken                # 计算 Token 数量
