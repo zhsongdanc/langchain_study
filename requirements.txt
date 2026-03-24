@@ -15,3 +15,10 @@ pydantic>=2.0           # 数据校验（LangChain 底层依赖）
 # 进阶功能 (RAG/检索)
 faiss-cpu               # 简单的本地向量数据库
 tiktoken                # 计算 Token 数量
+
+# 浏览器自动化
+playwright              # 浏览器自动化测试框架
+
+
+# 浏览器自动化
+playwright              # 浏览器自动化测试框架
