@@ -11,6 +11,7 @@
 - `Message` 作为历史记录项
 - `JSON` 作为 agent 和 model 之间的简化协议
 - 支持 `DemoModelClient` 和 `OllamaModelClient`
+- 内置最小 `execution trace / event log`
 
 ## 目录说明
 
@@ -27,6 +28,24 @@
 3. `ModelClient` 返回一个动作
 4. 如果动作是 `tool`，则执行工具并把结果写回历史
 5. 如果动作是 `final`，则结束
+
+## Trace 设计
+
+当前版本已经记录最小事件流，每条事件包含：
+
+- `step`
+- `event_type`
+- `payload`
+
+第一版支持的事件类型有：
+
+- `user_message`
+- `model_action`
+- `tool_call`
+- `tool_result`
+- `final_answer`
+
+这一步的目标不是做复杂可视化，而是先把 agent 的执行轨迹显式化，为后面的上下文管理和 workflow 做铺垫。
 
 ## 运行方式
 

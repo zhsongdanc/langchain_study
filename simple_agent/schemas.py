@@ -6,6 +6,13 @@ from typing import Any, Literal
 
 MessageRole = Literal["system", "user", "assistant", "tool"]
 ActionType = Literal["tool", "final"]
+TraceEventType = Literal[
+    "user_message",
+    "model_action",
+    "tool_call",
+    "tool_result",
+    "final_answer",
+]
 
 
 @dataclass
@@ -37,7 +44,15 @@ class ModelAction:
 
 
 @dataclass
+class TraceEvent:
+    step: int
+    event_type: TraceEventType
+    payload: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class AgentResult:
     answer: str
     steps: int
     history: list[Message]
+    trace: list[TraceEvent] = field(default_factory=list)

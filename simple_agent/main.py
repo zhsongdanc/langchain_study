@@ -24,6 +24,10 @@ def main() -> None:
     for message in result.history:
         print(f"- {message.role}: {message.content}")
 
+    print("\nTrace:")
+    for event in result.trace:
+        print(f"- step={event.step} type={event.event_type} payload={event.payload}")
+
 
 if __name__ == "__main__":
     main()
