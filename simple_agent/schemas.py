@@ -60,6 +60,13 @@ class WorkflowState:
 
 
 @dataclass
+class WorkflowGraph:
+    start_node: str
+    node_registry: dict[str, object]
+    router: object
+
+
+@dataclass
 class AgentResult:
     answer: str
     steps: int

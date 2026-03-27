@@ -4,7 +4,7 @@ from typing import Callable, Union
 
 from simple_agent.compactor import SimpleCompactor
 from simple_agent.model_client import BaseModelClient
-from simple_agent.schemas import AgentResult, Message, ToolCall, TraceEvent, WorkflowState
+from simple_agent.schemas import AgentResult, Message, ToolCall, TraceEvent, WorkflowGraph, WorkflowState
 from simple_agent.tools import ToolRegistry
 
 
@@ -25,15 +25,11 @@ class Agent:
         self.system_prompt = system_prompt
         self.compactor = compactor or SimpleCompactor()
         self.max_steps = max_steps
-        self.node_registry: dict[str, NodeHandler] = {
-            "decide": self._decide_step,
-            "execute_tool": self._execute_tool_step,
-            "finish": self._finish_step,
-        }
+        self.graph = self._build_graph()
 
     def run(self, user_input: str) -> AgentResult:
         state = self._build_initial_state(user_input)
-        return self._run_graph(state, start_node="decide")
+        return self._run_graph(state, self.graph)
 
     def _build_initial_state(self, user_input: str) -> WorkflowState:
         history = [
@@ -78,6 +74,18 @@ class Agent:
         if current_node == "execute_tool":
             return "decide"
         raise ValueError(f"Node {current_node} does not have a next route.")
+
+    def _build_graph(self) -> WorkflowGraph:
+        node_registry: dict[str, NodeHandler] = {
+            "decide": self._decide_step,
+            "execute_tool": self._execute_tool_step,
+            "finish": self._finish_step,
+        }
+        return WorkflowGraph(
+            start_node="decide",
+            node_registry=node_registry,
+            router=self._route_next_node,
+        )
 
     def _execute_tool_step(self, state: WorkflowState) -> WorkflowState:
         action = state.current_action
@@ -146,11 +154,11 @@ class Agent:
             compacted_history=compacted_history,
         )
 
-    def _run_graph(self, state: WorkflowState, start_node: str) -> AgentResult:
-        current_node = start_node
+    def _run_graph(self, state: WorkflowState, graph: WorkflowGraph) -> AgentResult:
+        current_node = graph.start_node
 
         while True:
-            handler = self.node_registry.get(current_node)
+            handler = graph.node_registry.get(current_node)
             if handler is None:
                 raise ValueError(f"Unknown workflow node: {current_node}")
 
@@ -159,4 +167,4 @@ class Agent:
                 return result
 
             state = result
-            current_node = self._route_next_node(current_node, state)
+            current_node = graph.router(current_node, state)
