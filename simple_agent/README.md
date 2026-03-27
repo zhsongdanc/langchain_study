@@ -19,6 +19,7 @@
 - `tools.py`: Tool 抽象和注册中心
 - `model_client.py`: 模型客户端抽象，包含演示模型和 Ollama 实现
 - `agent.py`: Agent 主循环
+- `compactor.py`: 规则版上下文压缩器
 - `main.py`: 启动入口
 
 ## 当前主流程
@@ -28,6 +29,18 @@
 3. `ModelClient` 返回一个动作
 4. 如果动作是 `tool`，则执行工具并把结果写回历史
 5. 如果动作是 `final`，则结束
+
+## Context Management / Compaction
+
+当前版本加入了一个最小 `SimpleCompactor`：
+
+- 保留 `system`
+- 保留 `user`
+- 保留最终 `assistant` 回复
+- 不长期保留 `Calling tool: ...` 这类展示文本
+- 把已知工具结果提炼成 `fact` 消息
+
+这一步的目的不是做复杂摘要，而是先把“执行细节”和“可继续使用的事实”区分开。
 
 ## Trace 设计
 

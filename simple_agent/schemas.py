@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 
-MessageRole = Literal["system", "user", "assistant", "tool"]
+MessageRole = Literal["system", "user", "assistant", "tool", "fact"]
 ActionType = Literal["tool", "final"]
 TraceEventType = Literal[
     "user_message",
@@ -56,3 +56,4 @@ class AgentResult:
     steps: int
     history: list[Message]
     trace: list[TraceEvent] = field(default_factory=list)
+    compacted_history: list[Message] = field(default_factory=list)

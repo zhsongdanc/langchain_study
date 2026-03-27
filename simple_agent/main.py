@@ -1,4 +1,5 @@
 from simple_agent.agent import Agent
+from simple_agent.compactor import SimpleCompactor
 from simple_agent.model_client import SYSTEM_PROMPT, build_model_client
 from simple_agent.tools import GetCelebrityAgeTool, MultiplyTool, ToolRegistry
 
@@ -6,10 +7,12 @@ from simple_agent.tools import GetCelebrityAgeTool, MultiplyTool, ToolRegistry
 def main() -> None:
     tools = ToolRegistry([GetCelebrityAgeTool(), MultiplyTool()])
     model_client = build_model_client()
+    compactor = SimpleCompactor()
     agent = Agent(
         model_client=model_client,
         tool_registry=tools,
         system_prompt=SYSTEM_PROMPT,
+        compactor=compactor,
         max_steps=5,
     )
 
@@ -27,6 +30,10 @@ def main() -> None:
     print("\nTrace:")
     for event in result.trace:
         print(f"- step={event.step} type={event.event_type} payload={event.payload}")
+
+    print("\nCompacted History:")
+    for message in result.compacted_history:
+        print(f"- {message.role}: {message.content}")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from simple_agent.compactor import SimpleCompactor
 from simple_agent.model_client import BaseModelClient
 from simple_agent.schemas import AgentResult, Message, ToolCall, TraceEvent
 from simple_agent.tools import ToolRegistry
@@ -11,11 +12,13 @@ class Agent:
         model_client: BaseModelClient,
         tool_registry: ToolRegistry,
         system_prompt: str,
+        compactor: SimpleCompactor | None = None,
         max_steps: int = 5,
     ) -> None:
         self.model_client = model_client
         self.tool_registry = tool_registry
         self.system_prompt = system_prompt
+        self.compactor = compactor or SimpleCompactor()
         self.max_steps = max_steps
 
     def run(self, user_input: str) -> AgentResult:
@@ -52,7 +55,14 @@ class Agent:
                         payload={"answer": answer},
                     )
                 )
-                return AgentResult(answer=answer, steps=step, history=history, trace=trace)
+                compacted_history = self.compactor.compact(history)
+                return AgentResult(
+                    answer=answer,
+                    steps=step,
+                    history=history,
+                    trace=trace,
+                    compacted_history=compacted_history,
+                )
 
             if action.tool_name is None:
                 raise ValueError("Tool action must include tool_name.")
