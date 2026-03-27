@@ -51,6 +51,15 @@ class TraceEvent:
 
 
 @dataclass
+class WorkflowState:
+    history: list[Message]
+    trace: list[TraceEvent]
+    step: int = 0
+    current_action: ModelAction | None = None
+    final_answer: str | None = None
+
+
+@dataclass
 class AgentResult:
     answer: str
     steps: int

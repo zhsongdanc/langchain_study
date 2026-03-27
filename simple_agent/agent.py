@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from simple_agent.compactor import SimpleCompactor
 from simple_agent.model_client import BaseModelClient
-from simple_agent.schemas import AgentResult, Message, ToolCall, TraceEvent
+from simple_agent.schemas import AgentResult, Message, ToolCall, TraceEvent, WorkflowState
 from simple_agent.tools import ToolRegistry
 
 
@@ -22,86 +22,125 @@ class Agent:
         self.max_steps = max_steps
 
     def run(self, user_input: str) -> AgentResult:
-        history: list[Message] = [
+        state = self._build_initial_state(user_input)
+        current_node = "decide"
+
+        while True:
+            if current_node == "decide":
+                if state.step >= self.max_steps:
+                    raise RuntimeError(f"Agent stopped after reaching max_steps={self.max_steps}.")
+                state = self._decide_step(state)
+                current_node = self._route_after_decide(state)
+                continue
+
+            if current_node == "execute_tool":
+                state = self._execute_tool_step(state)
+                current_node = "decide"
+                continue
+
+            if current_node == "finish":
+                return self._finish_step(state)
+
+            raise ValueError(f"Unknown workflow node: {current_node}")
+
+    def _build_initial_state(self, user_input: str) -> WorkflowState:
+        history = [
             Message(role="system", content=self.system_prompt),
             Message(role="user", content=user_input),
         ]
-        trace: list[TraceEvent] = [
-            TraceEvent(step=0, event_type="user_message", payload={"content": user_input}),
-        ]
+        trace = [TraceEvent(step=0, event_type="user_message", payload={"content": user_input})]
+        return WorkflowState(history=history, trace=trace)
 
-        for step in range(1, self.max_steps + 1):
-            action = self.model_client.generate(history, self.tool_registry.definitions())
-            trace.append(
-                TraceEvent(
-                    step=step,
-                    event_type="model_action",
-                    payload={
-                        "action": action.action,
-                        "tool_name": action.tool_name,
-                        "arguments": action.arguments,
-                        "answer": action.answer,
-                    },
-                )
+    def _decide_step(self, state: WorkflowState) -> WorkflowState:
+        next_step = state.step + 1
+        action = self.model_client.generate(state.history, self.tool_registry.definitions())
+        state.step = next_step
+        state.current_action = action
+        state.trace.append(
+            TraceEvent(
+                step=next_step,
+                event_type="model_action",
+                payload={
+                    "action": action.action,
+                    "tool_name": action.tool_name,
+                    "arguments": action.arguments,
+                    "answer": action.answer,
+                },
             )
+        )
+        return state
 
-            if action.action == "final":
-                answer = action.answer or ""
-                history.append(Message(role="assistant", content=answer))
-                trace.append(
-                    TraceEvent(
-                        step=step,
-                        event_type="final_answer",
-                        payload={"answer": answer},
-                    )
-                )
-                compacted_history = self.compactor.compact(history)
-                return AgentResult(
-                    answer=answer,
-                    steps=step,
-                    history=history,
-                    trace=trace,
-                    compacted_history=compacted_history,
-                )
+    def _route_after_decide(self, state: WorkflowState) -> str:
+        action = state.current_action
+        if action is None:
+            raise ValueError("Workflow routing requires current_action.")
+        if action.action == "final":
+            return "finish"
+        return "execute_tool"
 
-            if action.tool_name is None:
-                raise ValueError("Tool action must include tool_name.")
+    def _execute_tool_step(self, state: WorkflowState) -> WorkflowState:
+        action = state.current_action
+        if action is None or action.tool_name is None:
+            raise ValueError("Tool execution requires a tool action.")
 
-            trace.append(
-                TraceEvent(
-                    step=step,
-                    event_type="tool_call",
-                    payload={
-                        "tool_name": action.tool_name,
-                        "arguments": action.arguments,
-                    },
-                )
+        state.trace.append(
+            TraceEvent(
+                step=state.step,
+                event_type="tool_call",
+                payload={
+                    "tool_name": action.tool_name,
+                    "arguments": action.arguments,
+                },
             )
-            history.append(
-                Message(
-                    role="assistant",
-                    content=f"Calling tool: {action.tool_name}",
-                    tool_call=ToolCall(name=action.tool_name, arguments=action.arguments),
-                )
+        )
+        state.history.append(
+            Message(
+                role="assistant",
+                content=f"Calling tool: {action.tool_name}",
+                tool_call=ToolCall(name=action.tool_name, arguments=action.arguments),
             )
+        )
 
-            tool_result = self.tool_registry.execute(action.tool_name, action.arguments)
-            trace.append(
-                TraceEvent(
-                    step=step,
-                    event_type="tool_result",
-                    payload={
-                        "tool_name": action.tool_name,
-                        "arguments": action.arguments,
-                        "result": tool_result,
-                    },
-                )
+        tool_result = self.tool_registry.execute(action.tool_name, action.arguments)
+        state.trace.append(
+            TraceEvent(
+                step=state.step,
+                event_type="tool_result",
+                payload={
+                    "tool_name": action.tool_name,
+                    "arguments": action.arguments,
+                    "result": tool_result,
+                },
             )
-            history.append(
-                Message(
-                    role="tool",
-                    content=f"{action.tool_name}({action.arguments}) => {tool_result}",
-                )
+        )
+        state.history.append(
+            Message(
+                role="tool",
+                content=f"{action.tool_name}({action.arguments}) => {tool_result}",
             )
+        )
+        return state
 
-        raise RuntimeError(f"Agent stopped after reaching max_steps={self.max_steps}.")
+    def _finish_step(self, state: WorkflowState) -> AgentResult:
+        action = state.current_action
+        if action is None:
+            raise ValueError("Finish step requires current_action.")
+
+        answer = action.answer or ""
+        state.final_answer = answer
+        state.history.append(Message(role="assistant", content=answer))
+        state.trace.append(
+            TraceEvent(
+                step=state.step,
+                event_type="final_answer",
+                payload={"answer": answer},
+            )
+        )
+        compacted_history = self.compactor.compact(state.history)
+        return AgentResult(
+            answer=answer,
+            steps=state.step,
+            history=state.history,
+            trace=state.trace,
+            compacted_history=compacted_history,
+        )
