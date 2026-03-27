@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from typing import Callable, Union
+
 from simple_agent.compactor import SimpleCompactor
 from simple_agent.model_client import BaseModelClient
 from simple_agent.schemas import AgentResult, Message, ToolCall, TraceEvent, WorkflowState
 from simple_agent.tools import ToolRegistry
+
+
+NodeHandler = Callable[[WorkflowState], Union[WorkflowState, AgentResult]]
 
 
 class Agent:
@@ -20,28 +25,15 @@ class Agent:
         self.system_prompt = system_prompt
         self.compactor = compactor or SimpleCompactor()
         self.max_steps = max_steps
+        self.node_registry: dict[str, NodeHandler] = {
+            "decide": self._decide_step,
+            "execute_tool": self._execute_tool_step,
+            "finish": self._finish_step,
+        }
 
     def run(self, user_input: str) -> AgentResult:
         state = self._build_initial_state(user_input)
-        current_node = "decide"
-
-        while True:
-            if current_node == "decide":
-                if state.step >= self.max_steps:
-                    raise RuntimeError(f"Agent stopped after reaching max_steps={self.max_steps}.")
-                state = self._decide_step(state)
-                current_node = self._route_after_decide(state)
-                continue
-
-            if current_node == "execute_tool":
-                state = self._execute_tool_step(state)
-                current_node = "decide"
-                continue
-
-            if current_node == "finish":
-                return self._finish_step(state)
-
-            raise ValueError(f"Unknown workflow node: {current_node}")
+        return self._run_graph(state, start_node="decide")
 
     def _build_initial_state(self, user_input: str) -> WorkflowState:
         history = [
@@ -52,6 +44,8 @@ class Agent:
         return WorkflowState(history=history, trace=trace)
 
     def _decide_step(self, state: WorkflowState) -> WorkflowState:
+        if state.step >= self.max_steps:
+            raise RuntimeError(f"Agent stopped after reaching max_steps={self.max_steps}.")
         next_step = state.step + 1
         action = self.model_client.generate(state.history, self.tool_registry.definitions())
         state.step = next_step
@@ -77,6 +71,13 @@ class Agent:
         if action.action == "final":
             return "finish"
         return "execute_tool"
+
+    def _route_next_node(self, current_node: str, state: WorkflowState) -> str:
+        if current_node == "decide":
+            return self._route_after_decide(state)
+        if current_node == "execute_tool":
+            return "decide"
+        raise ValueError(f"Node {current_node} does not have a next route.")
 
     def _execute_tool_step(self, state: WorkflowState) -> WorkflowState:
         action = state.current_action
@@ -144,3 +145,18 @@ class Agent:
             trace=state.trace,
             compacted_history=compacted_history,
         )
+
+    def _run_graph(self, state: WorkflowState, start_node: str) -> AgentResult:
+        current_node = start_node
+
+        while True:
+            handler = self.node_registry.get(current_node)
+            if handler is None:
+                raise ValueError(f"Unknown workflow node: {current_node}")
+
+            result = handler(state)
+            if isinstance(result, AgentResult):
+                return result
+
+            state = result
+            current_node = self._route_next_node(current_node, state)
