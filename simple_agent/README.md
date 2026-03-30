@@ -21,6 +21,7 @@
 - `agent.py`: Agent 主循环
 - `compactor.py`: 规则版上下文压缩器
 - `main.py`: 启动入口
+- 最小 `approval` 节点，演示 human-in-the-loop 控制点
 
 ## 当前主流程
 
@@ -29,6 +30,17 @@
 3. `ModelClient` 返回一个动作
 4. 如果动作是 `tool`，则执行工具并把结果写回历史
 5. 如果动作是 `final`，则结束
+
+## Human-in-the-loop / Approval
+
+当前版本加入了一个最小 `approval` 节点：
+
+- 某些工具可被标记为需要审批
+- `decide` 之后先进入 `approval`
+- 审批通过再进入 `execute_tool`
+- 审批拒绝则直接结束
+
+当前 `main.py` 里用的是一个演示版 `approval_handler`，默认总是批准，用来先看清 graph 里的控制点。
 
 ## Context Management / Compaction
 
@@ -54,6 +66,8 @@
 
 - `user_message`
 - `model_action`
+- `approval_requested`
+- `approval_result`
 - `tool_call`
 - `tool_result`
 - `final_answer`

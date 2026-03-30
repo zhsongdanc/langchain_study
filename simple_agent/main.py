@@ -8,11 +8,18 @@ def main() -> None:
     tools = ToolRegistry([GetCelebrityAgeTool(), MultiplyTool()])
     model_client = build_model_client()
     compactor = SimpleCompactor()
+
+    def approval_handler(tool_name: str, arguments: dict[str, object]) -> bool:
+        print(f"[approval] tool={tool_name} arguments={arguments} approved=True")
+        return True
+
     agent = Agent(
         model_client=model_client,
         tool_registry=tools,
         system_prompt=SYSTEM_PROMPT,
         compactor=compactor,
+        tools_requiring_approval={"multiply"},
+        approval_handler=approval_handler,
         max_steps=5,
     )
 

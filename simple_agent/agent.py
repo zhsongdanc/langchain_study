@@ -9,6 +9,7 @@ from simple_agent.tools import ToolRegistry
 
 
 NodeHandler = Callable[[WorkflowState], Union[WorkflowState, AgentResult]]
+ApprovalHandler = Callable[[str, dict[str, object]], bool]
 
 
 class Agent:
@@ -18,12 +19,16 @@ class Agent:
         tool_registry: ToolRegistry,
         system_prompt: str,
         compactor: SimpleCompactor | None = None,
+        tools_requiring_approval: set[str] | None = None,
+        approval_handler: ApprovalHandler | None = None,
         max_steps: int = 5,
     ) -> None:
         self.model_client = model_client
         self.tool_registry = tool_registry
         self.system_prompt = system_prompt
         self.compactor = compactor or SimpleCompactor()
+        self.tools_requiring_approval = tools_requiring_approval or set()
+        self.approval_handler = approval_handler or self._default_approval_handler
         self.max_steps = max_steps
         self.graph = self._build_graph()
 
@@ -66,11 +71,17 @@ class Agent:
             raise ValueError("Workflow routing requires current_action.")
         if action.action == "final":
             return "finish"
+        if action.tool_name in self.tools_requiring_approval:
+            return "approval"
         return "execute_tool"
 
     def _route_next_node(self, current_node: str, state: WorkflowState) -> str:
         if current_node == "decide":
             return self._route_after_decide(state)
+        if current_node == "approval":
+            if state.approval_granted:
+                return "execute_tool"
+            return "finish"
         if current_node == "execute_tool":
             return "decide"
         raise ValueError(f"Node {current_node} does not have a next route.")
@@ -78,6 +89,7 @@ class Agent:
     def _build_graph(self) -> WorkflowGraph:
         node_registry: dict[str, NodeHandler] = {
             "decide": self._decide_step,
+            "approval": self._approval_step,
             "execute_tool": self._execute_tool_step,
             "finish": self._finish_step,
         }
@@ -130,6 +142,35 @@ class Agent:
         )
         return state
 
+    def _approval_step(self, state: WorkflowState) -> WorkflowState:
+        action = state.current_action
+        if action is None or action.tool_name is None:
+            raise ValueError("Approval step requires a pending tool action.")
+
+        state.trace.append(
+            TraceEvent(
+                step=state.step,
+                event_type="approval_requested",
+                payload={
+                    "tool_name": action.tool_name,
+                    "arguments": action.arguments,
+                },
+            )
+        )
+        approved = self.approval_handler(action.tool_name, action.arguments)
+        state.approval_granted = approved
+        state.trace.append(
+            TraceEvent(
+                step=state.step,
+                event_type="approval_result",
+                payload={
+                    "tool_name": action.tool_name,
+                    "approved": approved,
+                },
+            )
+        )
+        return state
+
     def _finish_step(self, state: WorkflowState) -> AgentResult:
         action = state.current_action
         if action is None:
@@ -168,3 +209,7 @@ class Agent:
 
             state = result
             current_node = graph.router(current_node, state)
+
+    def _default_approval_handler(self, tool_name: str, arguments: dict[str, object]) -> bool:
+        _ = tool_name, arguments
+        return True

@@ -9,6 +9,8 @@ ActionType = Literal["tool", "final"]
 TraceEventType = Literal[
     "user_message",
     "model_action",
+    "approval_requested",
+    "approval_result",
     "tool_call",
     "tool_result",
     "final_answer",
@@ -57,6 +59,7 @@ class WorkflowState:
     step: int = 0
     current_action: ModelAction | None = None
     final_answer: str | None = None
+    approval_granted: bool | None = None
 
 
 @dataclass
