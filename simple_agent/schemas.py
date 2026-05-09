@@ -60,6 +60,8 @@ class WorkflowState:
     current_action: ModelAction | None = None
     final_answer: str | None = None
     approval_granted: bool | None = None
+    waiting_for_approval: bool = False
+    pending_approval_id: str | None = None
 
 
 @dataclass
@@ -76,3 +78,11 @@ class AgentResult:
     history: list[Message]
     trace: list[TraceEvent] = field(default_factory=list)
     compacted_history: list[Message] = field(default_factory=list)
+
+
+@dataclass
+class SuspendedRun:
+    approval_id: str
+    state: WorkflowState
+    requested_tool_name: str
+    requested_arguments: dict[str, Any]

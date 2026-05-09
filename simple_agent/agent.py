@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 from typing import Callable, Union
+from uuid import uuid4
 
 from simple_agent.compactor import SimpleCompactor
 from simple_agent.model_client import BaseModelClient
-from simple_agent.schemas import AgentResult, Message, ToolCall, TraceEvent, WorkflowGraph, WorkflowState
+from simple_agent.schemas import (
+    AgentResult,
+    Message,
+    SuspendedRun,
+    ToolCall,
+    TraceEvent,
+    WorkflowGraph,
+    WorkflowState,
+)
 from simple_agent.tools import ToolRegistry
 
 
-NodeHandler = Callable[[WorkflowState], Union[WorkflowState, AgentResult]]
-ApprovalHandler = Callable[[str, dict[str, object]], bool]
+NodeHandler = Callable[[WorkflowState], Union[WorkflowState, AgentResult, SuspendedRun]]
 
 
 class Agent:
@@ -20,7 +28,6 @@ class Agent:
         system_prompt: str,
         compactor: SimpleCompactor | None = None,
         tools_requiring_approval: set[str] | None = None,
-        approval_handler: ApprovalHandler | None = None,
         max_steps: int = 5,
     ) -> None:
         self.model_client = model_client
@@ -28,13 +35,32 @@ class Agent:
         self.system_prompt = system_prompt
         self.compactor = compactor or SimpleCompactor()
         self.tools_requiring_approval = tools_requiring_approval or set()
-        self.approval_handler = approval_handler or self._default_approval_handler
         self.max_steps = max_steps
         self.graph = self._build_graph()
 
-    def run(self, user_input: str) -> AgentResult:
+    def run(self, user_input: str) -> AgentResult | SuspendedRun:
         state = self._build_initial_state(user_input)
         return self._run_graph(state, self.graph)
+
+    def resume(self, suspended_run: SuspendedRun, approved: bool) -> AgentResult | SuspendedRun:
+        state = suspended_run.state
+        if state.pending_approval_id != suspended_run.approval_id:
+            raise ValueError("Approval id does not match suspended state.")
+
+        state.approval_granted = approved
+        state.waiting_for_approval = False
+        state.trace.append(
+            TraceEvent(
+                step=state.step,
+                event_type="approval_result",
+                payload={
+                    "approval_id": suspended_run.approval_id,
+                    "tool_name": suspended_run.requested_tool_name,
+                    "approved": approved,
+                },
+            )
+        )
+        return self._run_graph(state, self.graph, start_node="approval_result")
 
     def _build_initial_state(self, user_input: str) -> WorkflowState:
         history = [
@@ -79,6 +105,8 @@ class Agent:
         if current_node == "decide":
             return self._route_after_decide(state)
         if current_node == "approval":
+            raise ValueError("Approval node should suspend instead of routing immediately.")
+        if current_node == "approval_result":
             if state.approval_granted:
                 return "execute_tool"
             return "finish"
@@ -90,6 +118,7 @@ class Agent:
         node_registry: dict[str, NodeHandler] = {
             "decide": self._decide_step,
             "approval": self._approval_step,
+            "approval_result": self._approval_result_step,
             "execute_tool": self._execute_tool_step,
             "finish": self._finish_step,
         }
@@ -142,33 +171,36 @@ class Agent:
         )
         return state
 
-    def _approval_step(self, state: WorkflowState) -> WorkflowState:
+    def _approval_step(self, state: WorkflowState) -> SuspendedRun:
         action = state.current_action
         if action is None or action.tool_name is None:
             raise ValueError("Approval step requires a pending tool action.")
 
+        approval_id = str(uuid4())
+        state.waiting_for_approval = True
+        state.pending_approval_id = approval_id
         state.trace.append(
             TraceEvent(
                 step=state.step,
                 event_type="approval_requested",
                 payload={
+                    "approval_id": approval_id,
                     "tool_name": action.tool_name,
                     "arguments": action.arguments,
                 },
             )
         )
-        approved = self.approval_handler(action.tool_name, action.arguments)
-        state.approval_granted = approved
-        state.trace.append(
-            TraceEvent(
-                step=state.step,
-                event_type="approval_result",
-                payload={
-                    "tool_name": action.tool_name,
-                    "approved": approved,
-                },
-            )
+        return SuspendedRun(
+            approval_id=approval_id,
+            state=state,
+            requested_tool_name=action.tool_name,
+            requested_arguments=action.arguments,
         )
+
+    def _approval_result_step(self, state: WorkflowState) -> WorkflowState:
+        if state.approval_granted is None:
+            raise ValueError("Approval result step requires an approval decision.")
+        state.pending_approval_id = None
         return state
 
     def _finish_step(self, state: WorkflowState) -> AgentResult:
@@ -195,8 +227,13 @@ class Agent:
             compacted_history=compacted_history,
         )
 
-    def _run_graph(self, state: WorkflowState, graph: WorkflowGraph) -> AgentResult:
-        current_node = graph.start_node
+    def _run_graph(
+        self,
+        state: WorkflowState,
+        graph: WorkflowGraph,
+        start_node: str | None = None,
+    ) -> AgentResult | SuspendedRun:
+        current_node = start_node or graph.start_node
 
         while True:
             handler = graph.node_registry.get(current_node)
@@ -206,10 +243,8 @@ class Agent:
             result = handler(state)
             if isinstance(result, AgentResult):
                 return result
+            if isinstance(result, SuspendedRun):
+                return result
 
             state = result
             current_node = graph.router(current_node, state)
-
-    def _default_approval_handler(self, tool_name: str, arguments: dict[str, object]) -> bool:
-        _ = tool_name, arguments
-        return True

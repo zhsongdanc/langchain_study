@@ -1,6 +1,7 @@
 from simple_agent.agent import Agent
 from simple_agent.compactor import SimpleCompactor
 from simple_agent.model_client import SYSTEM_PROMPT, build_model_client
+from simple_agent.schemas import AgentResult, SuspendedRun
 from simple_agent.tools import GetCelebrityAgeTool, MultiplyTool, ToolRegistry
 
 
@@ -9,22 +10,28 @@ def main() -> None:
     model_client = build_model_client()
     compactor = SimpleCompactor()
 
-    def approval_handler(tool_name: str, arguments: dict[str, object]) -> bool:
-        print(f"[approval] tool={tool_name} arguments={arguments} approved=True")
-        return True
-
     agent = Agent(
         model_client=model_client,
         tool_registry=tools,
         system_prompt=SYSTEM_PROMPT,
         compactor=compactor,
         tools_requiring_approval={"multiply"},
-        approval_handler=approval_handler,
         max_steps=5,
     )
 
     user_input = "周杰伦的年龄乘以 2 是多少？"
-    result = agent.run(user_input)
+    run_result = agent.run(user_input)
+    if isinstance(run_result, SuspendedRun):
+        print(
+            f"[suspended] approval_id={run_result.approval_id} "
+            f"tool={run_result.requested_tool_name} arguments={run_result.requested_arguments}"
+        )
+        result = agent.resume(run_result, approved=True)
+    else:
+        result = run_result
+
+    if not isinstance(result, AgentResult):
+        raise RuntimeError("Expected final AgentResult after resume.")
 
     print(f"Question: {user_input}")
     print(f"Model client: {model_client.__class__.__name__}")
